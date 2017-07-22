@@ -12,17 +12,19 @@ nameAre = '(ανδρικό\s*όνομα|ανδρικό\s*\[\[όνομα]])'
 def test():
     print(__file__)
 
-def fixthis(wikitext, languages, parts, basic):
+def fixthis(pagetitle, wikitext, languages, parts, basic):
     #print('inside')
+    oldwikitext = wikitext
     nameAAllre = nameAre + '|\[\[Κατηγορία:Ανδρικά ονόματα \('
     #print('inside 2')
     if '[[Κατηγορία:Ανδρικά ονόματα (ελληνικά)]]' in wikitext and '{{ονομαΑ}}' in wikitext:
+        #print('????????????????', pagetitle)
         return wikitext.replace('[[Κατηγορία:Ανδρικά ονόματα (ελληνικά)]]', '').rstrip(), ''
     matched = re.search(nameAAllre, wikitext)
     #print('inside 3')
     if matched:
         #print('inside 4')
-        sections = basic.getsections(wikitext, languages, parts)
+        sections = basic.getsections(pagetitle, wikitext, languages, parts)
         if sections[0]['garbage'] != '':
             print('HAS GARBAGE')
             return wikitext, sections[0]['garbage'] 
@@ -34,7 +36,7 @@ def fixthis(wikitext, languages, parts, basic):
         newtext = newsections[0]['content']
         if haschanges:
             #μόνο αν έχει αλλαγές
-            newsections = basic.fixseparators(newsections)
+            newsections = basic.fixdecor(newsections)
             newtext = newsections[0]['content'] 
             for xcounter in range(1, len(newsections)):
                 depth = newsections[xcounter]['depth']
@@ -43,6 +45,7 @@ def fixthis(wikitext, languages, parts, basic):
             newtext = newtext.rstrip()
             #print("return newtext, ''")
             return newtext, ''
+    #print('?????', wikitext != oldwikitext, pagetitle)
     return wikitext, ''
 
 def fixthis2(sections, languages, parts):
@@ -70,7 +73,7 @@ def fixthis2(sections, languages, parts):
                 newcontent = re.sub(categoryre,'', newcontent)
             else:
                 categoriesnotfound.append(categoryre)
-            section['content'] = newcontent
+            section['content'] = newcontent.replace('\n\n','\n')
     lastesection = sections[len(sections)-1]
     #αντικατέστησε τις κατηγορίες που δεν βρήκες μέσα στις ενότητες
     #και ίσως έχουν μπει στο τέλος
