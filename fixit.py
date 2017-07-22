@@ -101,6 +101,48 @@ class CreateFixes:
              #print('back to old dir.')
              return ok
 
+    def generaterelistfromlist(self, stopcounter = -1):
+        self.deleteoldtitles()
+        errorcounter = 0
+        #print('generaterelistfromlist')
+        with open(self.paths['list'], 'rt', encoding ='utf_8') as f:
+            alltitles = f.readlines(False)
+        #print('generaterelistfromlist',alltitles)
+        with db.DB(self.paths['dbfullpath']) as mydb:
+            thetext, thets = mydb.getLemmaContent('Module:Languages')
+            languages = self.basic.getLanguagesFromString(thetext)
+            thetext, thets = mydb.getLemmaContent('Module:PartOfSpeech')
+            parts = self.basic.getPartsFromString(thetext)
+            titlecounter = 0
+            with open(self.paths['titles'], 'wt', encoding ='utf_8') as ftitles:
+                ftitles.write("summary=" + self.fixes.summary + '\n')
+                for title in alltitles:
+                    if titlecounter == stopcounter:
+                        if titlecounter == stopcounter:
+                            print(errorcounter, 'errorcounter')
+                            print('stopcounter found, exiting fixes.')
+                            return
+                    title = title.rstrip()
+                    if title:
+                        print(title)
+                        oldwikitext, thets = mydb.getLemmaContent(title)
+                        #print('oldwikitext',oldwikitext)
+                        newtext, garbage = self.fixes.fixthis(title, oldwikitext, languages, parts, self.basic)
+                        #print('newtext',newtext)
+                        #print('garbage',garbage)
+                        if garbage != '':
+                            errorcounter += 1
+                            self.writerrors(title + ':' + garbage[:50].replace('\n','⁋')  +  '\n')
+                        elif newtext != oldwikitext:
+                            #print('======================================lemma.title',title)
+                            titlecounter += 1
+                            #print(lemma.title,len(newsections))
+                            ftitles.write(str(titlecounter) + ":" + title + '\n')
+                            self.writefiles(titlecounter, oldwikitext, newtext)
+        print('errorcounter:', errorcounter)
+        print('finished all fixes.')
+                
+
     def generaterelistfromdb(self, stopcounter = -1):
         #print(self.paths['olds dir'])
         #print(len(os.listdir(self.paths['olds dir'])))
@@ -133,18 +175,19 @@ class CreateFixes:
                             return
                         #print(lemma)
                         oldwikitext = lemma.content
+                        pagetitle = lemma.title.rstrip()
                         #sections = self.basic.getsections(oldwikitext, languages, parts)
-                        newtext, garbage = self.fixes.fixthis(oldwikitext, languages, parts, self.basic)
+                        newtext, garbage = self.fixes.fixthis(pagetitle, oldwikitext, languages, parts, self.basic)
                         #print('newsections',newsections)
                         #print(lemma.title)
                         if garbage != '':
                             errorcounter += 1
-                            self.writerrors(lemma.title + ':' + garbage[:50].replace('\n','⁋')  +  '\n')
+                            self.writerrors(pagetitle + ':' + garbage[:50].replace('\n','⁋')  +  '\n')
                         elif newtext != oldwikitext:
                             print(lemma.title)
                             titlecounter += 1
                             #print(lemma.title,len(newsections))
-                            ftitles.write(str(titlecounter) + ":" + lemma.title + '\n')
+                            ftitles.write(str(titlecounter) + ":" + pagetitle + '\n')
                             self.writefiles(titlecounter, oldwikitext, newtext)
         print('errorcounter:', errorcounter)
         print('finished all fixes.')
@@ -207,7 +250,7 @@ class UploadFixes:
         with open(self.paths['upload errors file'], 'at+', encoding ='utf_8') as ftitles:
             ftitles.write('\n' + aline.rstrip())            
 
-    def uploadfromlist(self, sleeptime = 2, maxuploads = 5):
+    def uploadfromlist(self, sleeptime = 2, maxuploads = 5, minor = False):
         with open(self.paths['titles'], 'rt', encoding ='utf_8') as ftitles:
             alllines = ftitles.readlines()
         if not alllines[0].startswith('summary='):
@@ -242,7 +285,6 @@ class UploadFixes:
                 self.logUploaded(uploadcounter,alllines[0])
                 del alllines[0]
                 self.saverest(summary, alllines)
-                
             else:
                 if comment == CANTLOGIN:
                     print(CANTLOGIN)
@@ -254,7 +296,8 @@ class UploadFixes:
                 del alllines[0]
         #return True
 
-    def tryedit(self, pagetitle, oldtext, newtext, summary, watchlist = 'watch'):
+    #TODO:add minor
+    def tryedit(self, pagetitle, oldtext, newtext, summary, watchlist = 'watch', minor = False):
         #print('in tryedit', pagetitle)
         #print('self.wiki', self.wiki)
         #print('self.username', self.username)
@@ -295,7 +338,7 @@ def loadPathsAndLibs(project, dumpspath):
     paths['errors file'] = os.path.join(paths['project path'],'errors.txt')
     paths['upload errors file'] = os.path.join(paths['project path'],'uploaderrors.txt')
     paths['log uploaded file'] = os.path.join(paths['project path'],'uploaded.log')
-
+    paths['list'] = os.path.join(paths['project path'],'listforfixes')
     try:
         with db.DB(paths['dbfullpath']) as mydb:
             paths['siteurl'] = mydb.getSiteURL() + 'w/api.php'
@@ -353,5 +396,9 @@ if __name__ == "__main__":
     password = ''
     project = 'elwiktionary'
     dumpspath = os.path.join(realfile_dir, '../..','dumps')
-    test1 = CreateFixes(project,dumpspath)
-    test1.generaterelistfromdb()
+    try:
+        test1 = CreateFixes(project,dumpspath)
+        test1.generaterelistfromdb()
+        #test1.generaterelistfromlist()
+    except Exception as e:
+        raise e
