@@ -80,10 +80,11 @@ def sortlanguagesections(sections, languages, onlysort = True):
 
 def checksections(sections):
     minigarbage = sections[0]['minigarbage']
+    pagetitle = sections[0]['title']
     for onesection in sections:
         section = sections[onesection]            
         if section['title'] == 'ετυμολογία':
-             if not section['content'].startswith(":'''{{PAGENAME}}''' < "):
+            if not section['content'].startswith(":'''{{PAGENAME}}''' < "):
                  minigarbage += str(xcounter) + ': Μορφοποίηση έναρξης ετυμολογίας\n'
         if ispartofspeech:
             if headword != '' and headword not in section['content']:
@@ -93,7 +94,7 @@ def checksections(sections):
 
 
 
-def getsections(wikitext, languages, parts):
+def getsections(pagetitle, wikitext, languages, parts):
     '''Επιστρέφει πίνακα με τα περιεχόμενα όλων των ενοτήτων.
 
     Το κείμενο μπορεί να αναδημιουργηθεί χρησιμοποιώντας τα depth, originaltitle και content.
@@ -114,7 +115,7 @@ def getsections(wikitext, languages, parts):
     #print('splittedlines',len(splittedlines))
     sections = {}
     xcounter = 0
-    sections[0] = {'depth':1, 'originaltitle':'', 'title':'lemma', 'langiso':'', 'langname':'',
+    sections[0] = {'depth':1, 'originaltitle':'', 'title': pagetitle, 'langiso':'', 'langname':'',
             'langhaswiki' : False, 'ispartofspeech' : False, 
             'titlelang' : '', 'content':'', 'garbage':'', 'mingarbage' : ''}
     lastlang = ''
@@ -196,16 +197,30 @@ def getsections(wikitext, languages, parts):
     #except Exception as e:
         #raise e
 
-def fixseparators(sections):
-    if len(sections)>2:
+def fixdecor(sections):
+    if len(sections) > 2:
+        pagetitle = sections[0]['title']
+        hasel = False
         for xcounter in range(2, len(sections)):
-            if sections[xcounter]['depth'] == 2:
-                if sections[xcounter-1]['langiso'] != sections[xcounter]['langiso']: 
+            section = sections[xcounter]
+            if section['title'] == 'προφορά':
+                if '{{ήχος|' in section['content']:
+                    soundre = '\{\{ήχος\|' + section['langiso'].capitalize() + '-' + pagetitle + '.ogg\|Ήχος\}\}'
+                    soundre2 = '\{\{ήχος\|' + section['langiso'] + '\}\}'
+                    #minigarbage += str(xcounter) + ': Μορφοποίηση έναρξης ετυμολογίας\n'
+                    #print(section['langiso'], soundre, soundre2)
+                    section['content'] = re.sub(soundre, soundre2, section['content'])
+            if section['depth'] == 2:
+                if section['langiso'] == 'el' or section['langiso'] == 'grc' or section['langiso'] == 'gkm':
+                    hasel = True
+                if sections[xcounter-1]['langiso'] != section['langiso']: 
                     content = sections[xcounter-1]['content'].rstrip()
                     if not content.endswith('\n----') :
                         sections[xcounter-1]['content'] = content + '\n\n\n----\n\n'
             sections[xcounter-1]['content'] = sections[xcounter-1]['content'].rstrip() + '\n\n'
             if sections[xcounter-1]['content'] == '\n\n':sections[xcounter-1]['content'] = '\n'
+        if hasel and ('{{κλείδα-ελλ}}' not in sections[len(sections)-1]['content']):
+            sections[len(sections)-1]['content'] += '{{κλείδα-ελλ}}' + '\n'
     return sections
 
 def getPartsFromString(thestring):
@@ -255,7 +270,7 @@ if __name__ == "__main__":
     try:
         sections = getsections(b, langs, parts)
         print('OK')
-        sections = fixseparators(sections)
+        sections = fixdecor(sections)
         print('OK 2')
     except Exception as e:
         raise e
