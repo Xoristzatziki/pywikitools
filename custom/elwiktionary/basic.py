@@ -206,7 +206,7 @@ def fixdecor(sections):
             if section['title'] == 'προφορά':
                 if '{{ήχος|' in section['content']:
                     soundre = '\{\{ήχος\|' + section['langiso'].capitalize() + '-' + pagetitle + '.ogg\|Ήχος\}\}'
-                    soundre2 = '\{\{ήχος\|' + section['langiso'] + '\}\}'
+                    soundre2 = '{{ήχος|' + section['langiso'] + '}}'
                     #minigarbage += str(xcounter) + ': Μορφοποίηση έναρξης ετυμολογίας\n'
                     #print(section['langiso'], soundre, soundre2)
                     section['content'] = re.sub(soundre, soundre2, section['content'])
