@@ -54,26 +54,27 @@ def fixthis2(sections, languages, parts):
     #print('check one')
     for onesection in sections:
         #print(sections[onesection]['title'])
-        section = sections[onesection]
-        langiso = section['langiso']
-        repstring = '{{ονομαΑ'
-        if langiso != 'el':
-            repstring += '|' + langiso
-        basicstring = repstring
-        repstring += '}}'
-        newcontent = section['content']
-        hasoldstyle = re.search(nameAre,section['content'])
-        if hasoldstyle:
-            #replace it, check category
-            newcontent = re.sub(nameAre, repstring, section['content'])
-            haschanges = True
-            categoryre = '\[\[Κατηγορία:Ανδρικά ονόματα \(' + section['langname'] + '\)\|*?[^\]]*]]'
-            hascategory = re.search(categoryre, newcontent)
-            if hascategory:
-                newcontent = re.sub(categoryre,'', newcontent)
-            else:
-                categoriesnotfound.append(categoryre)
-            section['content'] = newcontent.replace('\n\n','\n')
+        if sections[onesection]['title'] == 'κύριο όνομα':
+            section = sections[onesection]
+            langiso = section['langiso']
+            repstring = '{{ονομαΑ'
+            if langiso != 'el':
+                repstring += '|' + langiso
+            basicstring = repstring
+            repstring += '}}'
+            newcontent = section['content']
+            hasoldstyle = re.search(nameAre,section['content'])
+            if hasoldstyle:
+                #replace it, check category
+                newcontent = re.sub(nameAre, repstring, section['content'])
+                haschanges = True
+                categoryre = '\[\[Κατηγορία:Ανδρικά ονόματα \(' + section['langname'] + '\)\|*?[^\]]*]]'
+                hascategory = re.search(categoryre, newcontent)
+                if hascategory:
+                    newcontent = re.sub(categoryre,'', newcontent)
+                else:
+                    categoriesnotfound.append(categoryre)
+                section['content'] = newcontent.replace('\n\n','\n')
     lastesection = sections[len(sections)-1]
     #αντικατέστησε τις κατηγορίες που δεν βρήκες μέσα στις ενότητες
     #και ίσως έχουν μπει στο τέλος
