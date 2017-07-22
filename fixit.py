@@ -189,21 +189,21 @@ class UploadFixes:
         print(self.fixes.ns)
 
     def logUploaded(self, uploadcounter,line):
-        with open(self.paths['log uploaded file'], 'wt+', encoding ='utf_8') as ftitles:
+        with open(self.paths['log uploaded file'], 'at+', encoding ='utf_8') as ftitles:
             ftitles.write(str(uploadcounter) +':' + line.strip() + '\n' )            
 
     def saverest(self, summary, restoftitles):
         if len(restoftitles):
             with open(self.paths['titles'], 'wt', encoding ='utf_8') as ftitles:
                 ftitles.write('summary=' + summary + '\n')
-                ftitles.write("\n".join(restoftitles))
+                ftitles.write("".join(restoftitles))
         else:
             os.remove(self.paths['titles'])
 
     def logUploadError(self, summary, aline):
         if not os.path.exists(self.paths['upload errors file']):
             with open(self.paths['upload errors file'], 'wt', encoding ='utf_8') as ftitles:
-                ftitles.write('summary=' + summary )
+                ftitles.write('summary=' + summary.rstrip() )
         with open(self.paths['upload errors file'], 'at+', encoding ='utf_8') as ftitles:
             ftitles.write('\n' + aline.rstrip())            
 
@@ -352,7 +352,6 @@ if __name__ == "__main__":
     username =  'Tzatzbt'
     password = ''
     project = 'elwiktionary'
-    dumpspath = os.path.join(realfile_dir, '..','dumps')
+    dumpspath = os.path.join(realfile_dir, '../..','dumps')
     test1 = CreateFixes(project,dumpspath)
-    #test1.generaterelist()
-    
+    test1.generaterelistfromdb()
