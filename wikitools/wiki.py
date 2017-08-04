@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with wikitools.  If not, see <http://www.gnu.org/licenses/>.
 
+# Changes made by xoristzatziki
+
 from . import exceptions
 from . import api
 import requests
@@ -50,16 +52,16 @@ class Wiki:
         self.logout()
         return True
 
-    def __init__(self, url="https://en.wikipedia.org/w/api.php", httpuser=None, httppass=None, authman=None):
+    def __init__(self, url="https://el.wiktionary.org/", httpuser=None, httppass=None, authman=None):
         """
-        url - A URL to the site's API, defaults to en.wikipedia
+        url - A URL to the site, defaults to el.wiktionary
         httpuser - optional user name for HTTP Basic Auth
         httppass - password for HTTP Basic Auth, leave out to enter interactively
         authman - If using something other than HTTP Basic Auth, a requests Auth object
         such as requests.auth.HTTPDigestAuth('user', 'pass') for Digest Auth
         See <http://docs.python-requests.org/en/latest/user/authentication/>
         """
-        self.apibase = url
+        self.apibase = url + 'w/api.php'
         self.session = requests.Session()
         self.username = ''
         urlbits = urlparse(self.apibase)
@@ -344,4 +346,3 @@ class Wiki:
         else:
             user = ' not logged in'
         return "<"+self.__module__+'.'+self.__class__.__name__+" "+repr(self.apibase)+user+">"
-    
