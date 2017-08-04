@@ -169,7 +169,7 @@ class XmlDump(object):
                             timestamp=timestamp,
                             revisionid=revisionid,
                             comment=comment,
-                            redirect=self.isredirect
+                            redirect=1 if self.isredirect else 0
                            )
             yield theentry
             elem.clear()
