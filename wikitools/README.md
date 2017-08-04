@@ -27,8 +27,9 @@ Available modules
     exist on the local wiki.
   * user - Contains the User class for getting information about and
     blocking/unblocking users
+  * category -
 
-Further documentation
+Further old documentation
 ---------------------
   * https://github.com/alexz-enwp/wikitools/wiki
 
