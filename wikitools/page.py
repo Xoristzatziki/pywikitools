@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with wikitools.  If not, see <http://www.gnu.org/licenses/>.
 
+# Changes made by xoristzatziki
+
 from . import exceptions
 from . import api
 from . import internalfunctions
