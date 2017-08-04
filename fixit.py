@@ -4,15 +4,14 @@
 
 import os, time, re , sys
 import importlib.util
+import inspect
 
 if __name__ == "__main__":
     from wikitools import wiki, user, page, api
-    import auxiliary
     import db
 else:
-    from . import auxiliary
     from . import db
-    from .wikitools import wiki, page, api, user
+    from .wikitools import wiki, page, api, user, category
 
 PMCFILESTRING = '-pages-meta-current.xml'
 LPMCFILESTRING = '-latest' + PMCFILESTRING
@@ -28,7 +27,159 @@ class FixDict:
         self.reto = ''
         self.ok = False
 
+def listFromCategory(project, dumpspath, categorytitle, namespaces = None, username = None, password = None):
+    mdlfixes, paths = loadPathsAndLibs(project, dumpspath)
+    site = wiki.Wiki(paths['siteurl'], username, password)
+    c = category.Category(site, categorytitle)
+    titles = c.getAllMembers(namespaces)
+    with open(paths['list'], 'wt', encoding ='utf_8') as ftitles:
+        ftitles.write('\n'.join(titles))
+        print('titles written')    
+
 class CreateFixes:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, t, v, tb):
+        print('Exiting CreateFixes...')
+        return True
+
+    def __str__(self):
+        output = 'Not yet'
+        #if self.wiki:
+            #output = 'using:' + self.wiki['wikiid']
+        #else:
+            #output = 'NOT connected:' + self.apibase + ":"
+        return output
+
+    def __repr__(self):
+        output = 'Not yet'
+        #if self.wiki:
+            #output = 'using:' + self.wiki['wikiid']
+        #else:
+            #output = 'NOT connected:' + self.apibase + ":"
+        return "<"+self.__module__+'.'+self.__class__.__name__+" "+repr(output)+">"
+
+    def __init__(self, project, dumpspath):
+        self.fixes, self.paths = loadPathsAndLibs(project, dumpspath)
+        print(self.fixes,'self.fixes')
+
+    def checkit(self):
+        print('trying')
+        print(__file__)
+        b = inspect.getfile(db)
+        print(b)
+        ok = self.fixes.fixthis(b)
+
+    def appendError(self, aline):
+        with open(self.paths['errors file'], 'at+', encoding ='utf_8') as f:
+            f.write(aline)
+            print('error loged...')
+
+    def appendFixesData(self, oldtext, newtext):        
+        #print(os.path.join(self.paths['olds dir'], str(self.)))
+        with open(os.path.join(self.paths['olds dir'], str(self.titlecounter)), 'wt', encoding ='utf_8') as f:
+            f.write(oldtext)
+        with open(os.path.join(self.paths['new dir'], str(self.titlecounter)), 'wt', encoding ='utf_8') as f:
+            f.write(newtext)
+        #print('data written')
+        #ftitles.write(str(thenum) + ":" + thetitle + '\n')
+
+    def tryFixing(self, pagetitle, oldwikitext):
+        newtext, garbage = self.fixes.fixthis(pagetitle, oldwikitext)
+        #print(newtext == oldwikitext)
+        #print('lens', len(newtext), len(garbage))
+        if garbage != '':
+            self.errorcounter += 1
+            self.appendError(pagetitle + ':' + garbage[:50].replace('\n','⁋')  +  '\n')
+            return False                   
+        elif newtext != oldwikitext:
+            self.titlecounter += 1
+            #print('appending fixes, fixedcounter=',self.titlecounter)
+            self.appendFixesData( oldwikitext, newtext)
+            return True
+        return None
+
+    def getPageTitles(self, dummy = None):
+        #print('in generator of getPageTitles')
+        with open(self.paths['list'], 'rt', encoding ='utf_8') as f:
+            #print('in generator of getPageTitles, list opened.')
+            for line in f.readlines():
+                #print('in generator of getPageTitles, yielding')
+                yield line.strip()
+
+    def fixthem(self, fromlist, namespace = None, stopcounter = -1):
+        print('in fixthem')
+        with db.DB(self.paths['dbfullpath']) as mydb:
+            print('in fixthem db')
+            self.titlecounter = 0
+            self.errorcounter = 0
+            with open(self.paths['titles'], 'wt', encoding ='utf_8') as ftitles:
+                print('in fixthem titles opened.')
+                ftitles.write("summary=" + self.fixes.summary + '\n')
+                if fromlist:
+                    #print('fromlist')
+                    thegenerator = self.getPageTitles
+                else:
+                    thegenerator = mydb.iterTitles
+                #print('generator found')
+                for pagetitle in thegenerator(namespace):
+                    print('pagetitle:',pagetitle)
+                    if self.titlecounter == stopcounter:
+                        print(self.errorcounter, 'errorcounter')
+                        print('stopcounter found, exiting fixes.')
+                        return
+                    #print('getting content')
+                    oldwikitext, thets = mydb.getLemmaContent(pagetitle)
+                    #print('got content')
+                    ok = self.tryFixing(pagetitle, oldwikitext)
+                    #print(ok,'ok')
+                    if ok == True:
+                        ftitles.write(str(self.titlecounter) + ":" + pagetitle + '\n')
+                #print('generated finished')
+            print('closed:',paths['titles'])
+        print('exited db')
+
+def clearFixesPaths(thepaths):
+    pass
+
+def appendError(thepaths):
+    with open(thepaths['errors file'], 'at+', encoding ='utf_8') as f:
+        f.write(comment)
+        print('error loged...')
+
+def appendFixesData(thepaths,thenum, thetitle, oldtext, newtext, ftitles):
+    with open(os.path.join(thepaths['olds dir'], str(num)), 'wt', encoding ='utf_8') as f:
+        f.write(oldtext)
+    with open(os.path.join(thepaths['new dir'], str(num)), 'wt', encoding ='utf_8') as f:
+        f.write(newtext)
+    ftitles.write(str(thenum) + ":" + thetitle + '\n')
+
+def fixFromGenerator(project, dumpspath, thegenerator, stopcounter = -1):
+    mdlfixes, paths = loadPathsAndLibs(project, dumpspath)
+    with db.DB(paths['dbfullpath']) as mydb:
+        titlecounter = 0
+        errorcounter = 0
+        with open(paths['titles'], 'wt', encoding ='utf_8') as ftitles:
+            ftitles.write("summary=" + mdlfixes.summary + '\n')
+            for pagetitle in thegenerator:
+                if titlecounter == stopcounter:
+                    print(errorcounter, 'errorcounter')
+                    print('stopcounter found, exiting fixes.')
+                    return
+                oldwikitext, thets = mydb.getLemmaContent(title)
+                newtext, garbage = fixes.fixthis(pagetitle, oldwikitext)
+                if garbage != '':
+                    errorcounter += 1
+                    appendError(pagetitle + ':' + garbage[:50].replace('\n','⁋')  +  '\n')                    
+                elif newtext != oldwikitext:
+                    titlecounter += 1
+                    appendFixesData(paths, titlecounter, pagetitle, oldwikitext, newtext, ftitles)
+            print('generated finished')
+        print('closed:',paths['titles'])
+    print('exited db')
+
+class CreateFixes2:
     def __enter__(self):
         return self
 
@@ -56,7 +207,7 @@ class CreateFixes:
         #self.db = None
         self.basic, self.fixes , self.paths = loadPathsAndLibs(project, dumpspath)
         self.project = project
-        
+        self.wiki = wiki.Wiki(self.paths['siteurl'])
         if self.paths:            
             self.test()
             #self.db = db.DB(self.paths['dbfullpath'])
@@ -101,18 +252,42 @@ class CreateFixes:
              #print('back to old dir.')
              return ok
 
+    def generaterelistfromcategory(self, categorytitle, stopcounter = -1):
+        print('generaterelistfromcategory', categorytitle)
+        #self.wiki = wiki.Wiki(self.paths['siteurl'])
+        #print(category.__file__)
+        print(type(category))
+        print('self.wiki',self.wiki)
+        
+        c = category.Category(self.wiki ,categorytitle)
+        print(c)
+        titles = c.getAllMembers( )
+        #with db.DB(self.paths['dbfullpath']) as mydb:
+            #titles = []
+        print(len(titles), titles[0], titles[1])
+        with open(self.paths['list'], 'wt', encoding ='utf_8') as ftitles:
+            ftitles.write('\n'.join(titles))
+            print('titles written')
+        self.generaterelistfromlist()
+
     def generaterelistfromlist(self, stopcounter = -1):
         self.deleteoldtitles()
         errorcounter = 0
-        #print('generaterelistfromlist')
+        print('generaterelistfromlist enter')
+        self.basic.test()
+        self.fixes.test(self.basic)
         with open(self.paths['list'], 'rt', encoding ='utf_8') as f:
             alltitles = f.readlines(False)
-        #print('generaterelistfromlist',alltitles)
+        print('generaterelistfromlist len list',len(alltitles))
+        languages = {}
+        parts = {}
         with db.DB(self.paths['dbfullpath']) as mydb:
-            thetext, thets = mydb.getLemmaContent('Module:Languages')
-            languages = self.basic.getLanguagesFromString(thetext)
-            thetext, thets = mydb.getLemmaContent('Module:PartOfSpeech')
-            parts = self.basic.getPartsFromString(thetext)
+            if self.project =='elwiktionary':
+                thetext, thets = mydb.getLemmaContent('Module:Languages')
+                languages = self.basic.getLanguagesFromString(thetext)
+                thetext, thets = mydb.getLemmaContent('Module:PartOfSpeech')
+                parts = self.basic.getPartsFromString(thetext)
+
             titlecounter = 0
             with open(self.paths['titles'], 'wt', encoding ='utf_8') as ftitles:
                 ftitles.write("summary=" + self.fixes.summary + '\n')
@@ -124,11 +299,19 @@ class CreateFixes:
                             return
                     title = title.rstrip()
                     if title:
-                        print(title)
+                        #print(title)
+                        #print(languages,parts)
                         oldwikitext, thets = mydb.getLemmaContent(title)
-                        #print('oldwikitext',oldwikitext)
-                        newtext, garbage = self.fixes.fixthis(title, oldwikitext, languages, parts, self.basic)
-                        #print('newtext',newtext)
+                        #print('oldwikitext title, len:',title, len(oldwikitext))
+                        #print('oldwikitext title:',oldwikitext)
+                        #print('type(self.fixes.fixthis)',type(self.fixes.fixthis))
+                        
+                        #newtext, garbage = self.fixes.fixthis(title, oldwikitext, languages, parts, self.basic)
+                        #newtext, garbage = self.fixes.fixthis4(title = title, wikitext = oldwikitext, languages = languages, parts = parts)#, basic = self.basic)
+                        newtext, garbage = self.fixes.fixthis5(title= title, wikitext= oldwikitext, languages = languages, parts = parts, basic = self.basic)
+                        #garbage = ''
+                        #newtext, garbage = self.fixes.fixthis3( oldwikitext,self.basic)
+                        #print('newtext:',len(newtext))
                         #print('garbage',garbage)
                         if garbage != '':
                             errorcounter += 1
@@ -139,7 +322,7 @@ class CreateFixes:
                             #print(lemma.title,len(newsections))
                             ftitles.write(str(titlecounter) + ":" + title + '\n')
                             self.writefiles(titlecounter, oldwikitext, newtext)
-        print('errorcounter:', errorcounter)
+        print('end errorcounter:', errorcounter)
         print('finished all fixes.')
                 
 
@@ -314,11 +497,14 @@ class UploadFixes:
         wikitext = thepage.getWikiText()
         ts = thepage.lastedittime
         print('ts',ts)
+        #minor = basic.fixes.minor
+        #print('minor',minor)
         if oldtext == wikitext:
             editlemma = thepage.edit(text = newtext,
                         summary = summary,
                         basetimestamp = ts,
-                        watchlist = watchlist
+                        watchlist = watchlist,
+                        minor = 1
                         )
             return True,''
             #print('editlemma',editlemma)
@@ -327,12 +513,11 @@ class UploadFixes:
 
 def loadPathsAndLibs(project, dumpspath):
     paths = {}
-    
+
     paths['project path'] = os.path.join(dumpspath,'fixdir',project)
     paths['titles'] = os.path.join(paths['project path'],'titles')
     paths['new dir'] = os.path.join(paths['project path'],'new')
     paths['olds dir'] = os.path.join(paths['project path'],'olds')
-    paths['basic.py'] = os.path.join(paths['project path'],'basic.py')
     paths['fixes.py'] = os.path.join(paths['project path'],'fixes.py')
     paths['dbfullpath'] = os.path.join(dumpspath,project + LPMCFILESTRING + '.db')
     paths['errors file'] = os.path.join(paths['project path'],'errors.txt')
@@ -341,64 +526,27 @@ def loadPathsAndLibs(project, dumpspath):
     paths['list'] = os.path.join(paths['project path'],'listforfixes')
     try:
         with db.DB(paths['dbfullpath']) as mydb:
-            paths['siteurl'] = mydb.getSiteURL() + 'w/api.php'
-        spec = importlib.util.spec_from_file_location("basic", paths['basic.py'])
-        basic = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(basic)
+            paths['siteurl'] = mydb.getSiteURL() 
         spec = importlib.util.spec_from_file_location("fixes", paths['fixes.py'])
         fixes = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fixes)
-        basic.test()
-        return basic, fixes, paths
+        return fixes, paths
         #return paths
     except ImportError:
         return None, None, None
 
-def testimport(project, dumpspath):
-    paths = {}
-    
-    paths['project path'] = os.path.join(dumpspath,'fixdir',project)
-    paths['pr dir'] = os.path.join(paths['project path'],'__init__.py')
-    paths['new dir'] = os.path.join(paths['project path'],'new')
-    paths['olds dir'] = os.path.join(paths['project path'],'olds')
-    paths['basic.py'] = os.path.join(paths['project path'],'basic.py')
-    paths['fixes.py'] = os.path.join(paths['project path'],'fixes.py')
-    paths['errors file'] = os.path.join(paths['project path'],'erros.txt')
-    
-    #sys.path.append(os.path.join(os.path.dirname(dumpspath),project))
-    print(dumpspath)
-    for k in paths:
-        print(k,paths[k])
-    
-    try:
-        #spec = importlib.util.spec_from_file_location("module.name", "/path/to/file.py")
-        #spec = importlib.util.spec_from_file_location("basic.py", paths['project path'])
-        spec = importlib.util.spec_from_file_location(project, paths['project path'])
-        #spec = importlib.util.spec_from_file_location(project, paths['pr dir'])
-        pckg = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(pckg)
-        #from pckg import basic
-        #pckg.basic.test()
-        pckg.basic.test()
-        pckg.fixes.test()
-        
-    except ImportError:
-        #sys.stderr.write("ERROR: missing python module: ")
-        print("ERROR: missing python module: ", project)
-        raise
-    #print(basic.test())
-    #print(fixes.test())
 
 if __name__ == "__main__":
     realfile = os.path.realpath(__file__)
     realfile_dir = os.path.dirname(os.path.abspath(realfile))
     username =  'Tzatzbt'
     password = ''
-    project = 'elwiktionary'
+    #project = 'elwiktionary'
+    project = 'elwiki'
     dumpspath = os.path.join(realfile_dir, '../..','dumps')
     try:
         test1 = CreateFixes(project,dumpspath)
-        test1.generaterelistfromdb()
-        #test1.generaterelistfromlist()
+        #test1.generaterelistfromdb()
+        test1.generaterelistfromlist()
     except Exception as e:
         raise e
