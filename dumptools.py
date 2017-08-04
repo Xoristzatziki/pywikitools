@@ -2,7 +2,12 @@
 #Δημιουργήθηκε από τον Xoristzatziki στο el.wiktionary.org
 #2017
 
+
+#TODO:check if I check the sha1
+
 import inspect #remove in production?
+
+#import datetime
 
 import os, re, sys
 import bz2
@@ -58,10 +63,13 @@ PMCFILESTRING = '-pages-meta-current.xml'
 LPMCFILESTRING = '-latest' + PMCFILESTRING
 
 MAX_LE_OR_RC = 500
-MAX_PAGES_IN_CHUNK = 30
+MAX_PAGES_IN_CHUNK = 50
 MAX_LAG = 4
-MAX_SPECIALEXPORT_TRIES = 5
+MAX_SPECIALEXPORT_TRIES = 3
 
+def removeif(filefullname):
+    if os.path.exists(filefullname):
+        os.remove(filefullname)
 
 def reporthook(blocknum, blocksize, totalsize):
     readsofar = blocknum * blocksize
@@ -83,47 +91,7 @@ def pathFromdbPath(dbpath):
     dumpspath, dbname = os.path.split(dbpath)
     return dumpspath
 
-def MoveToBackup(project,dumpspath):
-    myprint('moving 2 files to backup')
-    try:
-        bpath = os.path.join(dumpspath, 'backup')
-        dbfullname = os.path.join(dumpspath, project+ LPMCFILESTRING + '.db') 
-        txtfullname = os.path.join(dumpspath, project+ LPMCFILESTRING + '.txt') 
-        if not os.path.exists(bpath):
-            os.mkdir(bpath)
-        else:
-            if not os.path.isdir(bpath):
-                return False
-        bdbfullname = shutil.move(dbfullname, bpath)
-        bdbfullname = shutil.move(txtfullname, bpath)
-        return True
-    except Exception as e:
-        return False
 
-def MoveFromBackup(project, dumpspath):
-    myprint('moving 2 files back from backup')
-    try:
-        bpath = os.path.join(dumpspath, 'backup')
-        bdbfullname = os.path.join(bpath, project+ LPMCFILESTRING + '.db') 
-        btxtfullname = os.path.join(bpath, project+ LPMCFILESTRING + '.txt') 
-
-        dbfullname = shutil.move(bdbfullname, dumpspath)
-        dbfullname = shutil.move(btxtfullname, dumpspath)
-        return True
-    except Exception as e:
-        return False
-
-def DeleteBackup(project, dumpspath):
-    myprint('deleting backup files as no more for use.')
-    try:
-        bpath = os.path.join(dumpspath, 'backup')
-        bdbfullname = os.path.join(bpath, project+ LPMCFILESTRING + '.db') 
-        btxtfullname = os.path.join(bpath, project+ LPMCFILESTRING + '.txt') 
-        os.remove(bdbfullname)
-        os.remove(btxtfullname)
-        return True
-    except Exception as e:
-        return False
 
 class Changed:
     def __init__(self):
@@ -137,24 +105,24 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
     API_ERROR_NONE = 0
     API_ERROR_DN = 1
     API_ERROR_TAGINXML = 2
-    def __init__(self, dbfile, jsprefix = '', fnrefresh = None):
-        self.fnrefresh = fnrefresh
-        self.dbfile = os.path.abspath(dbfile) #may be a dummy file path to get dumps path
-        self.jsprefix = jsprefix
-        self.jsonfile = os.path.join(os.path.split(self.dbfile)[0], 'dn', self.jsprefix + 'log.json')
+    def __init__(self, project, dumpspath):
+        self.project = project
+        self.dumpspath = os.path.abspath(dumpspath)
+        self.dbfile = os.path.join(self.dumpspath, project + LPMCFILESTRING + '.db')
+        self.txtfile = os.path.join(self.dumpspath, project + LPMCFILESTRING + '.txt')
+        self.jsonfile = os.path.join(self.dumpspath, 'dn', project + '-log.json')
+        self.bz2file = os.path.join(self.dumpspath, 'dn', project + LPMCFILESTRING + '.bz2')
+        self.bz2link = urllib.parse.urljoin(WEBPAGEOFDUMPS, project + '/latest/' + project + LPMCFILESTRING + '.bz2')
+        self.tsfile = self.bz2file + '.TS'
+        self.sha1file = self.bz2file + '.sha1'
         #myprint('self.jsonfile:', self.jsonfile)
         siteinfo = None
         self.siteurl = ''
         self.apiurl =  ''
-        self.dbTS = ''
+        self.dataTS = ''
+        self.dumpTS = ''
         self.continueTS = ''
         self.fillselfSiteInfo()
-#        if os.path.exists(self.dbfile):
-#            with db.DB(self.dbfile) as tmpdb:
-#                ok, siteinfo = tmpdb.getSiteInfo()
-#                self.siteurl = siteinfo['asiteurl']
-#                self.dbTS = siteinfo['atimestamp']
-#                self.continueTS = siteinfo['atimestamp']
         self.uptoTS = ''
         self.lastrcTS = ''
         
@@ -168,8 +136,9 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                 ok, siteinfo = tmpdb.getSiteInfo()
                 self.siteurl = siteinfo['asiteurl']
                 self.apiurl = self.siteurl + 'w/api.php'
-                self.dbTS = siteinfo['atimestamp']
-                self.continueTS = siteinfo['atimestamp']
+                self.dataTS = siteinfo['atimestamp']
+                self.dumpTS = siteinfo['adumpTS']
+                #self.continueTS = siteinfo['atimestamp']
                 #myprint('self.siteurl 0',self.siteurl, len(siteinfo),siteinfo[0])#, siteinfo[1],siteifno[2])
                 #for b in siteinfo:
                     #myprint(b)
@@ -181,64 +150,51 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
         with db.DB(self.dbfile) as tmpdb:
             print(tmpdb.getLemmaContent(a))
 
-    def getNewerDump(self):
-        '''Get a newer dump if exists.'''
-        project = projectFromdbPath(self.dbfile)
-        dumpspath = pathFromdbPath(self.dbfile)
-        if os.path.exists(self.dbfile):
-            if checkIfThereIsANewerDump(project, self.dbTS):
-                myprint('There is a newer dump.')
-                backupcreated = MoveToBackup(project,dumpspath)
-                if backupcreated:
-                    myprint('Moved 2 files to backup folder.')
-                    ok = CreateLocalFilesFromNet(project, dumpspath)
-                    if not ok:
-                        myprint('New local files from Net NOT created.')
-                        ok = MoveFromBackup(project, dumpspath)
-                        myprint('Old files moved back.')
-                        backupcreated = False
-                    else:
-                        self.fillselfSiteInfo()
-                        myprint('got new site info')
-                        ok = DeleteBackup(project, dumpspath)
-                        myprint('Deleted old backup files.')
-                        return True
-        else:
-            #myprint('getNewerDump project',project,'dumpspath',dumpspath)
-            myprint('No old files. Downloading latest.')
-            ok = CreateLocalFilesFromNet(project, dumpspath)
-            if ok:
-                self.fillselfSiteInfo()
-                myprint('got new site info')
-                return True
-            else:
-                myprint('We do not have any dump for project:' + str(project))
-                raise NotImplementedError
-        return False
+    def downloadLatestDump(self):
+        removeif(self.tsfile)
+        removeif(self.sha1file)
+        thesha1, theTS = self.getSHA1Values()
+        ok  = dnfile(self.bz2link,self.bz2file)
+        if ok:
+            with open(self.tsfile, 'wt') as ftxt:
+                ftxt.write(theTS)
+            with open(self.sha1file, 'wt') as ftxt:
+                ftxt.write(thesha1)
+        return ok
 
-    def getLatestDumpAndTitles(self, checkfornewer = True):
-        if checkfornewer:
-            try:
-                print('where?')
-                ok = self.getNewerDump()
-            except NotImplementedError:
-                myprint(inspect.stack()[0][3],'Error geting first Dump.')
-                return        
-        self.fillselfSiteInfo()
-        #continueTS = 
-        #myprint('do we have newer dump?:', ok)
-        siteurl = self.siteurl + 'w/api.php'
-        print(siteurl)
-        theTS = self.continueTS
-        #theTS = '20170702230000'
-        ok = self.jsonread()
-        if ok and len(self.changes):
-            print('updating from json')
-            self.getAndUpdateTheContent()
-            #return
-        #TODO:check1
-        #return
-        with wiki.Wiki(url = siteurl) as mywiki:
+    def newerDumpExists(self):
+        '''Check if a newer dump exists.'''
+        if self.dumpTS == '':
+            print('No dumpTS, newerDumpExists will be True')
+            return True
+        thesha1, theTS = self.getSHA1Values()
+        if theTS != '':
+            print('theTS > self.dumpTS', (theTS > self.dumpTS))
+            return (theTS > self.dumpTS)
+        else:
+            return False
+
+    def getSHA1Values(self):
+        thesha1 = ''
+        theTS = ''
+        thesha1sumslink = self.bz2link[:-len(PMCFILESTRING + '.bz2')] + '-sha1sums.txt '
+        ok, thetext = dnpage(thesha1sumslink)
+        if ok:
+            thematch = re.search('(?P<SHA1>.{40}) ' + self.project + '-(?P<TS>[0-9]{8})' + PMCFILESTRING, thetext)
+            if thematch:
+                thesha1 = thematch.group('SHA1')
+                theTS = thematch.group('TS')
+            else:
+                thematch = re.search('(?P<SHA1>.{40}) ' + self.project + '-(?P<TS>[0-9]{8})-',thetext)
+                if thematch:
+                    theTS = thematch.group('TS')
+        return thesha1, theTS
+
+
+##########################3*************************************************************************#########
+    def getChanges(self):
+        print('getChanges from:',self.dataTS)
+        with wiki.Wiki(url = self.siteurl) as mywiki:
             try:
                 #Get recent edits and new titles.
                 #print('get')
@@ -247,9 +203,9 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                 'rcprop':'title|timestamp|loginfo',
                 'rctype':'log|edit|new',
                 'rcdir':'newer',
-                'rcstart':theTS,
+                'rcstart':self.dataTS,
                 #'continue':self.dummycontinue,
-                #'rclimit':MAX_LE_OR_RC,
+                'rclimit':MAX_LE_OR_RC,
                 'maxlag':MAX_LAG
                 }
                 therequest = api.APIRequest(mywiki, urldata)
@@ -281,29 +237,95 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
             except Exception as e:
                 print(e)
                 raise e
-            #for b in sorted(self.changes, key=lambda x: self.changes[x]['timestamp']):
-                #print( self.changes[b]['timestamp'], b, self.changes[b]['isdel'])
-            if len(self.changes):
-                self.jsondump()
-                #print('start deleting')
-                with db.DB(self.dbfile) as tmpdb:
-                    for title in [x for x in self.changes if self.changes[x]['isdel']]:
-                        #print('was del')
-                        del self.changes[title]
-                        #myprint('found title for deletion', title)
-                        #ok = tmpdb.deleteLemma(title)
-                        #if ok:
-                            #del self.changes[title]
-                        #myprint('delete from self changes', title)
-                #print('end deleting','len(self.changes)',len(self.changes))
-                if len(self.changes):
-                    #print('start changing','len(self.changes)',len(self.changes))
-                    for item in self.changes:
-                        #print(self.changes[item]['timestamp'])
-                        self.changes[item]= self.changes[item]['timestamp']
-        self.jsondump()
+        print('Exiting getChanges')
+        return True
+
+    def getLatestDumpAndTitles(self, forcedownload = False, usedownloaded = False):
+        if forcedownload or self.newerDumpExists():
+            oldexisted = os.path.exists(self.dbfile)
+            if not self.MoveToBackup():
+                myprint('Could not move to backup')
+                return False            
+            if usedownloaded and os.path.exists(self.bz2file):
+                ok = True
+            else:
+                ok = self.downloadLatestDump()
+            if not ok:
+                myprint('Could not get Latest Dump')
+                return False
+            ok = InitiateLocalFiles(self.bz2file, self.dbfile, self.txtfile)
+            if not ok:
+                myprint('Could not Initiate Local Files.')
+                if oldexisted:
+                    self.MoveFromBackup()
+                return False
+            ok = self.fillFilesFrombz2()
+            if not ok:
+                myprint('Could fill Local Files From bz2.')
+                if oldexisted:
+                    self.MoveFromBackup()
+                return False
+            else:
+                self.DeleteBackup()
+                pass
+        removeif(self.tsfile)
+        removeif(self.sha1file)
+        self.fillselfSiteInfo()
+        myprint('filled site info')
+        if self.jsonread():
+            myprint('got changes from json file.', len(self.changes))
+        else:
+            self.getChanges()
+            myprint('got changes', len(self.changes))
         self.getAndUpdateTheContent()
- 
+        myprint('updated content')
+        
+    def fillFilesFrombz2(self):
+        try:
+            myprint('reading bz2 and writing txts...')
+            listForDB = []
+            theTS = ''
+            with open(self.bz2file + '.TS', 'rt') as ftxt:
+                theTS = ftxt.read().strip()
+            with open(self.bz2file + '.sha1', 'rt') as ftxt:
+                thesha1 = ftxt.read().strip()
+            if len(thesha1) == 40:
+                ok = checksha1hash(self.bz2file, thesha1)
+                if not ok:
+                    myprint('sha1 do not match.')
+                    return False
+            with open(self.txtfile, 'wt') as ftxt:
+                with xmldumpreader.XmlDump(self.bz2file) as myDump:
+                    #print('reading from bz2 file...')
+                    for entry in myDump.parse():
+                        #print(entry.isredirect)
+                        #listForDB.append((entry.title, entry.ns, str(ftxt.tell()), str(len(entry.text)),entry.timestamp))
+                        #print((entry.title, entry.ns, 1 if entry.isredirect else 0, ftxt.tell(), len(entry.text),entry.timestamp))
+                        listForDB.append((entry.title, int(entry.ns), 1 if entry.isredirect else 0, ftxt.tell(), len(entry.text), entry.timestamp))
+                        ftxt.write(entry.text + '\n')
+                    dsiteinfo = myDump.getSiteInfo()
+                    siteurl = urllib.parse.urljoin(dsiteinfo.base,'/')
+                    sitenses = '\n'.join((key + '#' + dsiteinfo.namespaces[key]) for key in sorted(dsiteinfo.namespaces, key=int))
+            myprint('                  writing texts ...DONE')
+            #myprint('filling db, siteurl, sitenses...', siteurl, sitenses)
+            ok = False
+            with db.DB(self.dbfile) as tmpdb:
+                ok = tmpdb.fillemptydb(listForDB, theTS, siteurl, sitenses)
+            if not ok:
+                print( 'db not filled')
+                return ok
+            print( 'The 2 files created')
+            print('deleting bz2...')
+            os.remove(self.bz2file)
+            #with open(TSfullname, 'wt') as ftxt:
+                #ftxt.write(theTS)
+            print('bz2 deleted')
+            print('DONE creating files from bz2')
+            return True
+        except Exception as e:
+            myprint(inspect.stack()[0][3],'Problem.')
+            raise
+
     def updatefromjsontest(self):
         ok = self.jsonread()
         if ok:
@@ -321,6 +343,7 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
     def updatefromjson(self):
         ok = self.jsonread()
         if ok:
+            myprint('getAndUpdateTheContent', 'from updatefromjson')
             self.getAndUpdateTheContent()
 
     def jsonread(self):
@@ -335,10 +358,9 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
             return True
         return False
 
-    def updateSiteInfoInDb(self, newmaxts, mywiki, localdb):
+    def updateSiteInfoInDb(self, mywiki, localdb):
         #print('in updateSiteInfoInDb')
-        if newmaxts == '': return
-        #print(mywiki.namespaces)
+        #print(localdb)
         nses = {}
         for key, val in mywiki.namespaces.items():
             #print(key, val, val['*'] )
@@ -347,45 +369,77 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
         #print(nses)
         sitenses = '\n'.join((str(key) + '#' + nses[key]) for key in sorted(nses, key=int))
         #print(sitenses)
-        localdb.updateSiteInfo(getnonZtime(newmaxts), self.siteurl, sitenses)
+        #print('===========updating sitenses and localdb ts ===================')
+        #localdb.updateSiteInfo3(sitenses)
+        localdb.updateSiteInfo2(sitenses)
         myprint(' siteinfo updated.')
 
     def getAndUpdateTheContent(self):
         previouscounter = 0
-        newmaxts = ''
+        if len(self.changes) == 0:
+            myprint('no changes found')
+            return True
         try:
             with db.DB(self.dbfile) as localdb:
-                with wiki.Wiki(url = self.apiurl) as mywiki:                    
+                myprint('1. remaining changed pages:',len(self.changes),'  ')
+                #myprint('deleting any if exists')
+                #myprint(self.changes.keys())
+                #print(self.changes)
+                removelist = [key for key in self.changes if self.changes[key]['isdel']]
+                #print("len(removelist)",len(removelist))
+                if len(removelist):
+                    print(removelist[0])
+                    ok = localdb.deleteWithTransaction(removelist)
+                #myprint('deleting deletes finished.')
+                self.changes = {key:self.changes[key] for key in self.changes if not self.changes[key]['isdel']}
+                #for key in removelist:
+                    #print(self.changes[key])
+                    #localdb.deleteLemma(key)
+                    #print('isdel 3', key)
+                    #del self.changes[key]
+                    #print('isdel 4', key)
+                    #myprint('remaining changed pages:',len(self.changes),'  ')
+                
+                myprint('2. remaining changed pages after deletes:',len(self.changes),'  ')
+                with wiki.Wiki(url = self.siteurl) as mywiki:
+                    print('updating using self.changes')                    
                     while True:        
-                        myprintstay('remaining changed pages:',len(self.changes),'  ')
-                        #if self.fnrefresh:
-                            #self.fnrefresh('remaining changed pages:' + len(self.changes))
+                        myprint('remaining changed pages in loop:',len(self.changes),'  ')
+                        #starttiming = datetime.datetime.now()
                         if len(self.changes) == 0:
                             myprint(inspect.stack()[0][3],'No (more) titles in self.changes.')
-                            self.updateSiteInfoInDb(newmaxts, mywiki, localdb)
-                            return True
-                            #break
+                            
+                            #return True
+                            break
                         if len(self.changes) == previouscounter:
-                            myprint(inspect.stack()[0][3],'No changes done!!!')
-                            return False
+                            myprint(inspect.stack()[0][3],'WARNING! No changes done!!! Stop.')
+                            #return False
+                            break
                         previouscounter = len(self.changes)
-                        listoftitlestoget = list(islice([l for l in sorted(self.changes,key=self.changes.get)], MAX_PAGES_IN_CHUNK))
+                        #print('previouscounter',previouscounter)
+                        #print(sorted(self.changes, key=lambda x: self.changes[x]['timestamp']))
+                        #print([l for l in sorted(self.changes.iteritems(), key=lambda (x, y): y['timestamp']) ])
+                        listoftitlestoget = list(islice([l for l in sorted(self.changes, key=lambda x: self.changes[x]['timestamp'])], MAX_PAGES_IN_CHUNK))
+                        #print("requesting ", len(listoftitlestoget))
                         #myprint('UpdateChangedLemmas, getting next chunk...')
+                        #print('===============listoftitlestoget',listoftitlestoget)
                         urldata = { 'action':'query',
                         'titles':'|'.join(listoftitlestoget),
-                        'prop':'revisions',
+                        'prop':'revisions|info',
                         'rvprop':'content|timestamp'
                         }
-                        #print(mywiki, urldata)
+                        #print('mywiki, urldata',mywiki, urldata)
                         therequest = api.APIRequest(mywiki, urldata)
                         #print('therequest check')
                         fullreq = therequest.querySimple()
+                        #stoptime1 = datetime.datetime.now()
                         if fullreq:
                             req = fullreq['query']
                             #print('got one req')
                             #print(req)
                             if 'normalized' in req:
                                 #myprint('has normalized')
+                                print('has normalized')
                                 for normalised in req['normalized']:
                                     listname = normalised['from']
                                     newname = normalised['to']
@@ -395,56 +449,114 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                                     listoftitlestoget.append(newname)
                             #myprint('after normalized')
                             #print(req)
-                            for pageidtxt in req['pages']:
-                                #print('pageidtxt',pageidtxt)
-                                #for test in req['pages'][pageidtxt]:
-                                    #print (test)
-                                apage = req['pages'][pageidtxt]
-                                #pageidint = int(apage)
-                                #myprint('pageid',pageidint)
-                                #myprint('pageid',type(apage))
-                                #for test in apage:
-                                    #print (test)
-                                if int(pageidtxt) < 1:
-                                    #print ('int(pageidtxt) < 1')
-                                    #someone deleted it meanwhile
-                                    #which means there are more recent changes
-                                    ok = localdb.deleteLemma(apage['title'])
-                                    #myprint('deleted=', ok)
+                            #allids = [x for x in req['pages']]
+                            #for anything in req['pages'][x] for x in req['pages']
+                            #lala = {}
+                            #for x in req['pages']:
+                                #print('x',x)
+                                #print(req['pages'][x])
+                                #lala.append(req['pages'][x])
+                            #print('lala',lala)
+                            #print({x:req['pages'][x] for x in req['pages']})
+                            requestpages = {x:req['pages'][x] for x in req['pages']}
+                            #print("in request ", len(requestpages))
+                            #TODO: check if title can be zero
+                            #deletedids = [x for x in req['pages'] if int(x) < 0]
+                            deletedtitles = [requestpages[x]['title'] for x in requestpages if int(x) < 0]
+                            requestpages = {x:requestpages[x] for x in requestpages if int(x) > 0}                                                        
+                            #print('len(deletedtitles)', len(deletedtitles),deletedtitles)
+                            if len(deletedtitles):                                
+                                ok = localdb.deleteWithTransaction(deletedtitles)
+                                for pagetitle in deletedtitles:
+                                    del self.changes[pagetitle]
+                            remainingtitles = tuple(requestpages[x]['title'] for x in requestpages)
+                            #print('remainingtitles',remainingtitles)
+                            existingentries = localdb.getLemmasInList(remainingtitles)
+                            #print('existingentries',len(existingentries))#,existingentries)
+                            newlemmas = {}
+                            oldlemmas = {}
+                            for pageid in requestpages:
+                                if requestpages[pageid]['title'] in existingentries:
+                                    #print("requestpages[pageid]['title']",requestpages[pageid]['title'])
+                                    #print("existingentries[requestpages[pageid]]",existingentries[requestpages[pageid]['title']])
+                                    #print("requestpages[pageid]",requestpages[pageid])
+                                    #oldlemmas[requestpages[pageid]['title']] = {'old':existingentries[requestpages[pageid]['title']],
+                                                #'new':requestpages[pageid]}
+                                    oldlemmas[pageid] = requestpages[pageid]
                                 else:
-                                    #print ('int(pageidtxt) >= 1')
-                                    #print ('len page[revisions]',type(apage['revisions']))
-                                    #print ('int(pageidtxt) >= 1   2')
-                                    newentry = db.DBRow(title = apage['title'],
-                                    ns = apage['ns'],
-                                    timestamp = apage['revisions'][0]['timestamp'],
-                                    content = apage['revisions'][0]['*'],#rest are dummy values
-                                    start = 0,
-                                    charlen = 0
-                                    )
-                                    #print('newentry',newentry)
-                                    #print(type(localdb))
-                                    #print('conn', localdb.myconn)
-                                    #print(str(localdb))
-                                    ok = localdb.updateLemma(newentry)
-                                    #myprint('updated', ok)
-                                    newmaxts = max(newmaxts, apage['revisions'][0]['timestamp'])
-                                #TODO: fill it later with a SELECT in db
-                                #myprint('one to go 1')                                
-                                del self.changes[apage['title']]
-                                listoftitlestoget.remove(apage['title'])
-                                #myprint('one to go 2')
-                            #myprintstay('remaining:', len(self.changes))
-                            self.jsondump()
-                            #myprint('jsondumped')
-                    #all done
-                    #update the table
-                    #siteinfo = mywiki.setSiteinfo()
-                    #TODO:get latest info about nses
+                                    #print("requestpages[pageid]['title']  NOT",requestpages[pageid]['title'])
+                                    newlemmas[pageid] = requestpages[pageid]
+                            print('len(oldlemmas)',len(oldlemmas),'len(newlemmas)',len(newlemmas))
+                            #print('len(oldlemmas)',oldlemmas)
+                            #print('len(newlemmas)',newlemmas)
 
+                            #for pagetitle in oldlemmas:
+                                #print('updating old', len(oldlemmas))
+                                #print('==============PAGE ================',pagetitle )
+                                #print('new dict',oldlemmas[pagetitle]['new'])
+                                #print('old dict',oldlemmas[pagetitle]['old'])
+                                #print(oldlemmas[pagetitle]['new']['ns'])
+                                #print(1 if 'redirect' in oldlemmas[pagetitle]['new'] else 0)
+                                #print(oldlemmas[pagetitle]['new']['revisions'][0]['timestamp'])
+                                #print(oldlemmas[pagetitle]['new']['revisions'][0]['*'])
+                                #print(oldlemmas[pagetitle]['old']['lstart'])
+                                #print(oldlemmas[pagetitle]['old']['lcharlen'])
+                                #print('=============-----------------------============')
+                                #newentrywitholddata = db.DBRow(title = pagetitle,
+                                                    #ns = oldlemmas[pagetitle]['new']['ns'],
+                                                    #isredirect = 1 if 'redirect' in oldlemmas[pagetitle]['new'] else 0,
+                                                    #timestamp = oldlemmas[pagetitle]['new']['revisions'][0]['timestamp'],
+                                                    #content = oldlemmas[pagetitle]['new']['revisions'][0]['*'],#rest are dummy values
+                                                    #start = oldlemmas[pagetitle]['old']['lstart'],
+                                                    #charlen = oldlemmas[pagetitle]['old']['lcharlen']                                    
+                                                    #)
+                                #print('newentry',newentry)
+                                #ok = localdb.updateExistingLemma(newentrywitholddata)
+                                #print('updated lemma:',pagetitle)
+                                #del self.changes[pagetitle]
+                                #listoftitlestoget.remove(pagetitle)
+                            if len(oldlemmas):
+                                #print('updating old', len(oldlemmas))
+                                localdb.updateExistingLemmas(oldlemmas)
+                                for pageidtxt in oldlemmas:
+                                    del self.changes[oldlemmas[pageidtxt]['title']]
+                                    listoftitlestoget.remove(oldlemmas[pageidtxt]['title'])
+                            #print('updating old    END', len(oldlemmas))
+                            if len(newlemmas):
+                                #print('appending new', len(newlemmas))
+                                localdb.appendWithTransaction(newlemmas)
+                                for pageidtxt in newlemmas:
+                                    del self.changes[newlemmas[pageidtxt]['title']]
+                                    listoftitlestoget.remove(newlemmas[pageidtxt]['title'])
+                            #print('appending new         END', len(newlemmas)) 
+                            #for pageidtxt in newlemmas:
+                                #apage = newlemmas[pageidtxt]
+                                #newentry = db.DBRow(title = apage['title'],
+                                #                    ns = apage['ns'],
+                                #                    isredirect = 1 if 'redirect' in apage else 0,
+                                 #                   timestamp = apage['revisions'][0]['timestamp'],
+                                 #                   content = apage['revisions'][0]['*'],#rest are dummy values
+                                 #                   start = 0,
+                                 #                   charlen = 0                                    
+                                 #                   )
+                                #print('newentry',newentry)
+                                #ok = localdb.appendLemma(newentry)
+                                #print('updated lemma:',apage['title'])
+                                #del self.changes[apage['title']]
+                                #listoftitlestoget.remove(apage['title'])
+                                
+                            self.jsondump()
+                        #stoptime2 = datetime.datetime.now()
+                        #print( stoptime2 - stoptime1, stoptime1 - starttiming)
+                    #out of break
+                    print('out of break')
+                    self.updateSiteInfoInDb( mywiki, localdb)
         except Exceptions as e:
             myprint(inspect.stack()[0][3],e)
             raise e
+        #just in case
+        self.jsondump()
+        print('exiting update content')
 
     def addifnewer(self, thetitle, theTS, isdel=False):
         if self.changes.get(thetitle) != None:
@@ -468,88 +580,60 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
             #return False
             raise e
 
-##################################################################################################################################################################
-def checkIfThereIsANewerDump(project, latestdumpTS):
-    '''Return if there is a newer Dump from the last downloaded.
-
-    '''
-    ok, thebz2link = LinkOfDump(project, numbered = False)
-    if not ok:return False
-    thesha1sumslink = thebz2link[:-len(PMCFILESTRING + '.bz2')] + '-sha1sums.txt '
-    ok, tmpfname = dnfile(thesha1sumslink)
-    #myprint('ok, tmpfname = dnfile(thesha1sumslink)',ok)
-    if not ok:return False
-    with open(tmpfname, mode='rt', encoding="utf-8") as f:
-        for line in f.readlines():
-            if line.strip() != '':#just grab the first non empty line and create a TS
-                print('line',line.split(" "))
-                myTS = list(filter(bool,line.split(" ")))[1].split('-')[1]
-                print('ts from sha1',myTS, 'reported',latestdumpTS,"###",myTS[:8] , latestdumpTS[:8])
-                return (myTS[:8] > latestdumpTS[:8])
-    return False
-
-def ExtractFrombz2(project, dumpspath, theTS, deleteoldfiles = False):
-    dnpath = os.path.join(dumpspath,'dn')
-    bz2fullname = os.path.join(dnpath, project + LPMCFILESTRING + '.bz2')
-    dbfullname = os.path.join(dumpspath, project + LPMCFILESTRING + '.db')
-    txtfullname = os.path.join(dumpspath, project + LPMCFILESTRING + '.txt')
-    #TSfullname = os.path.join(dumpspath, project + LPMCFILESTRING + '.TS')
-    if os.path.exists(bz2fullname):
-        myprint('creating empty files...')
-        ok = InitiateLocalFiles(bz2fullname, dbfullname, txtfullname, deleteoldfiles = deleteoldfiles)
-        if not ok:
-            return False, 'Something went wrong in: ' + inspect.stack()[0][3]
-        listForDB = []
-        #starttime = time.time()
-        writtenbytes = 0
-        #myprint('creating the txt file...')
-        #print(DumpNames.bz2filename)
-        siteurl = ''
-        sitenses = ''
+    def MoveToBackup(self):
+        #myprint('moving 2 files to backup')
         try:
-            myprint('reading bz2 and writing txts...')
-            with open(txtfullname, 'wt') as ftxt:
-                with xmldumpreader.XmlDump(bz2fullname) as myDump:
-                    #print('reading from bz2 file...')
-                    for entry in myDump.parse():
-                        #listForDB.append((entry.title, entry.ns, str(ftxt.tell()), str(len(entry.text)),entry.timestamp))
-                        listForDB.append((entry.title, entry.ns, ftxt.tell(), len(entry.text),entry.timestamp))
-                        ftxt.write(entry.text + '\n')
-                    dsiteinfo = myDump.getSiteInfo()
-                    siteurl = urllib.parse.urljoin(dsiteinfo.base,'/')
-                    sitenses = '\n'.join((key + '#' + dsiteinfo.namespaces[key]) for key in sorted(dsiteinfo.namespaces, key=int))
-            myprint('                  ...DONE')
-            #myprint('filling db, siteurl, sitenses...', siteurl, sitenses)
-            ok = False
-            with db.DB(dbfullname) as tmpdb:
-                ok = tmpdb.fillemptydb(listForDB, theTS, siteurl, sitenses)
-            if not ok:
-                print( 'db not filled')
-                return
-            print( 'The 2 files created')
-            print('deleting bz2...')
-            os.remove(bz2fullname)
-            #with open(TSfullname, 'wt') as ftxt:
-                #ftxt.write(theTS)
-            print('bz2 deleted')
-            print('DONE creating files from bz2')
+            backuppath = os.path.join(self.dumpspath, 'backup')
+            #myprint('backuppath 1. moving 2 files to backup',backuppath)
+            if not os.path.exists(backuppath):
+                #myprint('backuppath 2. moving 2 files to backup',backuppath)
+                os.mkdir(backuppath)
+            else:
+                #myprint('backuppath 3. moving 2 files to backup')
+                if not os.path.isdir(backuppath):
+                    #myprint('backuppath 4. moving 2 files to backup')
+                    return False
+            if not os.path.exists(self.dbfile):
+                return True
+            #myprint('backuppath 5. moving 2 files to backup')
+            if os.path.exists(self.dbfile):
+                removeif(os.path.join(self.dumpspath,'backup', os.path.basename(self.dbfile)))
+                dontcare = shutil.move(self.dbfile, backuppath)
+                print('db moved to b')
+            if os.path.exists(self.txtfile):
+                print('trying to move txt to b')
+                removeif(os.path.join(self.dumpspath,'backup', os.path.basename(self.txtfile)))
+                dontcare = shutil.move(self.txtfile, backuppath)
             return True
         except Exception as e:
-            myprint(inspect.stack()[0][3],'Problem.')
-            raise
-    else:
-        return False, 'bz2 file not found'
-#TODO: change checkhash
-def CreateLocalFilesFromNet(project, dumpspath, numbered = False, deleteoldbz2 = False, checkhash = False):
-    dnlpath = os.path.join(dumpspath, 'dn')
-    bz2saveas = os.path.join(dnlpath, project + LPMCFILESTRING + '.bz2')
-    myprint('saveas',bz2saveas)
-    #TODO: remove "checkhash = False" if problem fixed or provide in DownloadLatestDump another way to bypass it
-    ok, theTS = DownloadLatestDump(project, dumpspath, numbered = numbered, removeold = deleteoldbz2, checkhash = checkhash)
-    #myprint('bz2saveas ok',ok)
-    if not ok:return False
-    #we want older files deleted 
-    return ExtractFrombz2(project, dumpspath, theTS, deleteoldfiles = True)
+            return False
+
+    def MoveFromBackup(self):
+        myprint('moving 2 files back from backup')
+        try:
+            backuppath = os.path.join(self.dumpspath, 'backup')
+            bdbfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.db') 
+            btxtfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.txt') 
+
+            dontcare = shutil.move(bdbfullname, dumpspath)
+            dontcare = shutil.move(btxtfullname, dumpspath)
+            return True
+        except Exception as e:
+            return False
+
+    def DeleteBackup(self):
+        myprint('deleting 2 files from backup.')
+        try:
+            backuppath = os.path.join(self.dumpspath, 'backup')
+            bdbfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.db') 
+            btxtfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.txt') 
+            removeif(bdbfullname)
+            removeif(btxtfullname)
+            return True
+        except Exception as e:
+            return False
+
+##################################################################################################################################################################
 
 def InitiateLocalFiles(bz2fullname, dbfullname, txtfullname, deleteoldfiles = False):
     '''Create the empty .db and .txt files.'''
@@ -580,114 +664,7 @@ def InitiateLocalFiles(bz2fullname, dbfullname, txtfullname, deleteoldfiles = Fa
         myprint('could not create empty db or empty txt file', inspect.stack()[0][3])
         return False
 
-def DownloadLatestDump(project, dumpspath, numbered = False, removeold = False, checkhash = True):
-    '''Download a dump.
 
-    '''
-    #digest can only be checked if original file name is known
-    #latest is always changed. Only numbered remain the same.
-    try:
-        #myprint("1",inspect.stack()[0][3],'dumpspath=', dumpspath)
-        #myprint(inspect.stack()[0][3],'*********************************************')
-        #myprint("2",inspect.stack()[0][3],'project=', project)
-        saveas = os.path.join(dumpspath, 'dn', project+ LPMCFILESTRING + '.bz2')
-        ok, thebz2link = LinkOfDump(project, numbered)
-        #myprint('thebz2link', thebz2link, 'saveas', saveas)
-        if not ok: return False,''
-        myprint(inspect.stack()[0][3],saveas)
-        if os.path.exists(saveas):
-            if removeold:
-                try:os.remove(saveas)
-                except Exception as e:
-                    myprint('could not remove old dump', inspect.stack()[0][3])
-                    return False,''
-                ok, tmpfname = dnfile(thebz2link)
-                if not ok: return False,''
-                shutil.move(tmpfname, saveas)
-            else:
-                #myprint('An old dump exists. Use removeold attr to remove it.', inspect.stack()[0][3])
-                #return False,''
-                myprint('Keeping old bz2')
-                pass
-        else:#TODO: how to compact this?
-            ok, tmpfname = dnfile(thebz2link)
-            if not ok: return False,''
-            shutil.move(tmpfname, saveas)
-
-        thesha1sumslink = thebz2link[:-len(PMCFILESTRING + '.bz2')] + '-sha1sums.txt '
-        myprint('tmpfname = dnfile(thesha1sumslink)',thesha1sumslink)
-        ok, tmpfname = dnfile(thesha1sumslink)
-        myprint('2 ok, tmpfname = dnfile(thesha1sumslink)',ok)
-        if ok:
-            with open(tmpfname, mode='rt', encoding="utf-8") as f:
-                #myprint('sha1 opened')
-                for line in f.readlines():
-                    #myprint('sha1 line ', line)
-                    
-                    if checkhash:
-                        
-                        if PMCFILESTRING in line:
-                            #myprint('sha1 found')
-                            myprint('Checking sha1 hash...')
-                            splitted = list(filter(bool,line.split(" ")))
-                            mysha1 = splitted[0].strip()
-                            myTS = splitted[1].split('-')[1]
-                            return checksha1hash(saveas, mysha1), myTS
-                    else:#just grab the first line and create a TS
-                        if len(line.split(" "))>1:
-                            print('line',line.split(" "))
-                            #print('line',line.split(" ")[1])
-                            myTS = line.strip().split(" ")[2].split('-')[1]
-                            #myTS = list(filter(bool,line.split(" ")))[2].split('-')[1]
-                            print('myTS',myTS)
-                            return True, myTS
-                myprint('sha1 NOT found')
-    except Exception as e: myprint(inspect.stack()[0][3],e) #pass
-    return False,''
-
-def PageOfProjectLatestDumps(project):
-    '''Return the URL of the page with all latest dumps for this project.'''
-    ok, pagedata = dnpage(INDEXPAGEOFDUMPS)
-    #print('_SetProjectLatestPage')
-    if ok:
-        relativelink = ''
-        try:relativelink = re.search('(<a href.+'+project+'.+'+project+'</a>)',pagedata).group(0).split('"')[1]
-        except Exception as e:return False,e.args
-
-        if relativelink != '':
-            thelink = urllib.parse.urljoin(WEBPAGEOFDUMPS, relativelink)
-            return True, thelink
-        else:
-            myprint('=================PAGE:',INDEXPAGEOFDUMPS )
-            myprint(pagedata)
-            return False, 'No link found.'
-    else:
-        myprint('xm')
-        return False, pagedata
-
-def LinkOfDump (project, numbered = True):
-    '''Return the URL of the latest pages-meta-current.xml.bz2 file'''
-    if not numbered:
-        return True, urllib.parse.urljoin(WEBPAGEOFDUMPS, project + '/latest/' + project + LPMCFILESTRING + '.bz2')
-    ok, theprojectlink = PageOfProjectLatestDumps(project)
-    if not ok:
-        return False, 'Page of all dumps returned False'
-    ok, pagedata = dnpage(theprojectlink)
-    #myprint(inspect.stack()[0][3],ok, pagedata)
-    if ok:
-        relativelink = ''
-        try:relativelink = re.search('(<a href.+' + project + '.+' + PMCFILESTRING + '.bz2' + '</a>)',pagedata).group(0).split('"')[1]
-        except:pass
-        if relativelink != '':
-            #myprint('rel link',relativelink)
-            thelink = urllib.parse.urljoin(pageurl, relativelink)
-            #myprint('the link',thelink)
-            return True, thelink
-        else:
-            return False, 'No link found.'
-    else:
-        myprint('xm...',inspect.stack()[0][3])
-        return
 
 def dnpage(url):
     try:
@@ -738,7 +715,7 @@ def dnfile( url, saveas=None):
 
 def donothing(*args):
     try:
-        with wiki.Wiki('https://el.wiktionary.org/w/api.php') as mywiki:
+        with wiki.Wiki('https://el.wiktionary.org/') as mywiki:
             print(mywiki)
             p = page.Page(mywiki, title='go')
             print(p)
@@ -767,27 +744,30 @@ if __name__ == "__main__":
     #print(realfile_dir)
     #donothing() #and exit
     #exit()
-    project = 'elwiktionary'
+    project = 'ukwiktionary'
+    dumpspath = os.path.abspath( os.path.join(realfile_dir,'..','..','dumps'))
     #b = CreateLocalFilesFromNet(project,os.path.join(realfile_dir,'..','..','dumps'), numbered = False)
     #print('CreateLocalFilesFromNet returned:',b)
     #if not b: exit()
 
-    try:
-        b = os.path.join(realfile_dir,'..','..','dumps',project + '-latest-pages-meta-current.xml.db')
-        t = os.path.join(realfile_dir,'..','..','dumps',project + '-latest-pages-meta-current.xml.txt')
-        p = os.path.join(realfile_dir,'..','..','dumps')
-        bz = os.path.join(realfile_dir,'..','..','dumps','dn',project + '-latest-pages-meta-current.xml.bz2')
 
-        #myprint('b',b)
-        #CreateLocalFilesFromNet(project,pathFromdbPath(b),checkhash = False)
-        #b = Updater(os.path.join(realfile_dir,'..','..','dumps',project + '-latest-pages-meta-current.xml.db'))
-        #b.checksmth('θάλασσα')
-        #b.getAllChangedTitles()
-        #b.updatefromjson()
-        #b.getAllChanges()
-        #CreateLocalFilesFromNet(project,p)
-        #InitiateLocalFiles(bz, b, t, deleteoldfiles = True)
-        u = Updater(b)
-        u.getLatestDumpAndTitles(checkfornewer = False)
-    except Exception as e:
-        print(e)
+    #b = os.path.join(realfile_dir,'..','..','dumps',project + '-latest-pages-meta-current.xml.db')
+    #t = os.path.join(realfile_dir,'..','..','dumps',project + '-latest-pages-meta-current.xml.txt')
+    #p = os.path.join(realfile_dir,'..','..','dumps')
+    #bz = os.path.join(realfile_dir,'..','..','dumps','dn',project + '-latest-pages-meta-current.xml.bz2')
+
+    #myprint('b',b)
+    #CreateLocalFilesFromNet(project,pathFromdbPath(b),checkhash = False)
+    #b = Updater(os.path.join(realfile_dir,'..','..','dumps',project + '-latest-pages-meta-current.xml.db'))
+    #b.checksmth('θάλασσα')
+    #b.getAllChangedTitles()
+    #b.updatefromjson()
+    #b.getAllChanges()
+    #CreateLocalFilesFromNet(project,p)
+    #InitiateLocalFiles(bz, b, t, deleteoldfiles = True)
+    u = Updater(project,dumpspath)
+    u.getLatestDumpAndTitles(forcedownload = True, usedownloaded = True)
+    #forcedownload = False, usedownloaded 
+    #u.jsonread()
+    #u.updatefromjson()
+    #u.getChanges()
