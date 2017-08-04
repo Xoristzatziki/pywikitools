@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with wikitools.  If not, see <http://www.gnu.org/licenses/>.
 
-# This module is documented at http://code.google.com/p/python-wikitools/wiki/api
+# Changes made by xoristzatziki
 
 from . import exceptions
 import re
@@ -328,4 +328,3 @@ def resultCombine(type, old, new):
                     retset.update(newset)
                     ret['query']['pages'][key][type] = [dict(entry) for entry in retset]
     return ret
-
