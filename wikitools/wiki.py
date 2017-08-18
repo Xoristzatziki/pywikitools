@@ -40,7 +40,8 @@ class Namespace(int):
     def __ror__(self, other):
         return '|'.join([str(other), str(self)])
 
-VERSION = '2.0.2'
+VERSION = '0.0.2'
+USERAGENT = 'pywikitools%s (Xoristzatziki at elwiktionary)' % (VERSION,)
 
 class Wiki:
     """A Wiki site"""
@@ -77,7 +78,8 @@ class Wiki:
             self.auth = None
         self.maxlag = 5
         self.maxwaittime = 120
-        self.useragent = "py3-wikitools-mrg/%s" % VERSION
+        #self.useragent = "py3-wikitools-mrg/%s" % VERSION
+        self.useragent = USERAGENT
         self.limit = 500
         self.siteinfo = {}
         self.namespaces = {}
@@ -88,7 +90,6 @@ class Wiki:
             self.setSiteinfo()
         except exceptions.APIError: # probably read-restricted
             print('read-restricted')
-            pass
 
     def setSiteinfo(self):
         """Retrieves basic siteinfo
@@ -104,7 +105,7 @@ class Wiki:
         if self.maxlag < 120:
             params['maxlag'] = 120
         req = api.APIRequest(self, params)
-        info = req.query(False)
+        info = req.query()
         sidata = info['query']['general']
         for item in sidata:
             self.siteinfo[item] = sidata[item]
@@ -128,9 +129,9 @@ class Wiki:
             warnings.warn("WARNING: Write-API not enabled, you will not be able to edit", UserWarning)
         version = re.search("\d\.(\d\d)", self.siteinfo['generator'])
         vnum = int(version.group(1))
-        if vnum < 21: 
+        if vnum < 21:
             warnings.warn("WARNING: Some features are unavailable on older versions of MediaWiki. 1.21 or newer is recommended", UserWarning)
-        else:   
+        else:
             self.features.add('continue')
         if vnum >= 23:
             self.features.add('AssertEdit')
@@ -200,8 +201,8 @@ class Wiki:
         user_rights = info['query']['userinfo']['rights']
         if 'apihighlimits' in user_rights:
             self.limit = 5000
-        if self.useragent == "python-wikitools/%s" % VERSION:
-            self.useragent = "python-wikitools/%s (User:%s)" % (VERSION, self.username)
+        #if self.useragent == "python-wikitools/%s" % VERSION:
+            #self.useragent = "python-wikitools/%s (User:%s)" % (VERSION, self.username)
         return True
 
     def logout(self):
@@ -216,7 +217,7 @@ class Wiki:
         self.session.post(self.apibase, data=req.data, headers=req.headers, auth=self.auth)
         self.username = ''
         self.maxlag = 5
-        self.useragent = "python-wikitools/%s" % VERSION
+        #self.useragent = "python-wikitools/%s" % VERSION
         self.limit = 500
         self.session = requests.Session()
         return True
@@ -257,11 +258,6 @@ class Wiki:
             raise exceptions.WikiError("maxlag must be an integer")
         self.maxlag = int(maxlag)
         return self.maxlag
-
-    def setUserAgent(self, useragent):
-        """Function to set a different user-agent"""
-        self.useragent = str(useragent)
-        return self.useragent
 
     def setAssert(self, value):
         """Set an assertion value
@@ -346,3 +342,4 @@ class Wiki:
         else:
             user = ' not logged in'
         return "<"+self.__module__+'.'+self.__class__.__name__+" "+repr(self.apibase)+user+">"
+
