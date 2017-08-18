@@ -35,7 +35,7 @@ class DBRow:
         #self.ipedit = ipedit
         #self.revisionid = revisionid
         #self.comment = comment
-        
+
 
 class DB:
     '''Encapsulate all comunication with the DB.'''
@@ -104,7 +104,7 @@ class DB:
             return True
         except Exception as e:
             print(inspect.stack()[0][3],e)
-            
+
         return False
 
     def fillemptydb(self, listForDB, theTS, siteurl, sitenses):
@@ -166,7 +166,7 @@ class DB:
 
     def updateSiteInfo(self, newbaseTS, siteurl, sitenses):
         try:
-            #myprint('updateSiteInfo') 
+            #myprint('updateSiteInfo')
             self.myconn.execute('''UPDATE attribstbl set atimestamp =?, asiteurl=?, asitenses=?;''', (newbaseTS, siteurl, sitenses))
             #myprint('updateSiteInfo ok')
         except Exception as e:
@@ -187,7 +187,7 @@ class DB:
             #myprint('arow 0', arow[0])
             newbaseTS = getnonZtime(arow[0])
             #print(newbaseTS)
-            #siteurl, sitenses = GetInfoFromDump(dbfullpath)            
+            #siteurl, sitenses = GetInfoFromDump(dbfullpath)
             self.myconn.execute('''UPDATE attribstbl set atimestamp =?, asitenses=?;''', (newbaseTS, sitenses))
             #print('updateSiteInfo2 ok')
         except Exception as e:
@@ -221,7 +221,7 @@ class DB:
         except Exception as e:
             #myprint('Exception in:', inspect.stack()[0][3],e.args)
             raise
-        
+
 
     def getusablespace(self, thisstart):
         try:
@@ -256,7 +256,7 @@ class DB:
             self.myconn.close()
             self.myconn = sqlite3.connect(self.dbfilename, isolation_level = None)
             self.myconn.row_factory = sqlite3.Row
-            #print('deleteWithTransaction END')      
+            #print('deleteWithTransaction END')
         except sqlite3.Error as e:
             print(e)
             raise e
@@ -306,7 +306,7 @@ class DB:
                                                     isredirect = 1 if 'redirect' in dictwithlemmas[pageid] else 0,
                                                     timestamp = dictwithlemmas[pageid]['revisions'][0]['timestamp'],
                                                     start = titlestart,
-                                                    charlen = len(dictwithlemmas[pageid]['revisions'][0]['*']),#rest are dummy values                                   
+                                                    charlen = len(dictwithlemmas[pageid]['revisions'][0]['*']),#rest are dummy values
                                                     content = ''
                                                     )
             #print('field added')
@@ -346,7 +346,7 @@ class DB:
 
     def updateExistingLemmas(self, dictwithlemmas):
         #fields = {}
-         
+
         #try:
         self.myconn.close()
         self.myconn = sqlite3.connect(self.dbfilename, isolation_level = 'EXCLUSIVE')
@@ -368,13 +368,13 @@ class DB:
                     len(dictwithlemmas[pageid]['revisions'][0]['*']),
                     dictwithlemmas[pageid]['revisions'][0]['timestamp'],
                     dictwithlemmas[pageid]['title']))
-            
+
             #fields[dictwithlemmas[pageid]['pageid']] = DBRow(title = dictwithlemmas[pageid]['title'],
                                                     #ns = dictwithlemmas[pageid]['ns'],
                                                     #isredirect = 1 if 'redirect' in dictwithlemmas[pageid] else 0,
                                                     #timestamp = dictwithlemmas[pageid]['revisions'][0]['timestamp'],
                                                     #start = titlestart,
-                                                    #charlen = len(bytes(dictwithlemmas[pageid]['revisions'][0]['*'], 'utf-8')),#rest are dummy values                                   
+                                                    #charlen = len(bytes(dictwithlemmas[pageid]['revisions'][0]['*'], 'utf-8')),#rest are dummy values
                                                     #content = ''
                                                     #)
             #print('field added')
@@ -408,7 +408,7 @@ class DB:
         usablespace = self.getusablespace(start)
         #print(' in updatelemma usablespace' , usablespace)
         byteslength = len(bytes(newentrywitholddata.content, 'utf-8'))
-        
+
         if usablespace < byteslength:#either at end or no room for content
             ok = self.textdelete(start, usablespace)
             #print('updateExistingLemma textdeleted')
@@ -608,7 +608,7 @@ class DB:
             if usablespace == -1:
                 #is the last lemma
                 #truncate to lstart and return true
-                
+
                 self.txtfile.truncate(start)
                 self.txtfile.seek(start)
                 return True
@@ -650,7 +650,7 @@ class DB:
                     #print(x['lemma'], '==================')
                     #print('lemma in manyrows',manyrows[x]['lemma'])
                     #print({key : x[key] for key in x.keys() if key != 'lemma'})
-                    
+
                     lemmasasfields[arow['lemma']] = { key : arow[key] for key in arow.keys() if key != 'lemma'}
                     #lemmasasfields[manyrows[x]['lemma']] = { 'lns': manyrows[x]['lns'],
                                     #'lredirect':manyrows[x]['lredirect'],
@@ -661,7 +661,7 @@ class DB:
                 #print(lemmasasfields['promulgate'])
                 return lemmasasfields
             else:
-                return {} 
+                return {}
         except sqlite3.IntegrityError:
             print('DB IntegrityError ERROR')
             return None
@@ -692,7 +692,7 @@ if __name__ == "__main__":
             print(localydb)
             localydb.updateSiteInfo2('blahblah')
 
-            
+
             #b = db.getLemmasLike('zebra')
             #print(len(b))
             #for c in b:
@@ -725,3 +725,5 @@ if __name__ == "__main__":
             #print('b=',b)
     except Exception as e:
         raise
+
+

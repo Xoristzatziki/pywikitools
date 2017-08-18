@@ -10,7 +10,7 @@ import inspect #remove in production?
 #import datetime
 
 import os, re, sys
-import bz2
+#import bz2
 import time
 import io
 
@@ -22,9 +22,8 @@ from itertools import islice
 import urllib.request
 import urllib.parse
 from urllib.error import URLError, HTTPError
-import xml.etree.ElementTree as ET
 
- 
+
 #TODO?: is it worth write a simpler conf rw?
 import json
 
@@ -55,8 +54,11 @@ getnonZtime = auxiliary.getnonZtime
 #checksha1hash = donotcheck try
 
 version = '0.0.3'
+#ASSUME dir is inside a path named: 'v' + current version number
+subversion = os.path.basename(os.path.abspath(os.path.join(os.path.split(os.path.realpath(__file__))[0], '..')))[2:]
 
-justAQueryingAgentHeaders = {'User-Agent':'Xoristzatziki fishing only boat','version': version}
+
+justAQueryingAgentHeaders = {'User-Agent':'Xoristzatziki@elwiktionary fishing only boat','version': subversion + '/' + version}
 WEBPAGEOFDUMPS = 'https://dumps.wikimedia.your.org/'
 INDEXPAGEOFDUMPS = 'https://dumps.wikimedia.your.org/backup-index.html'
 PMCFILESTRING = '-pages-meta-current.xml'
@@ -125,7 +127,7 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
         self.fillselfSiteInfo()
         self.uptoTS = ''
         self.lastrcTS = ''
-        
+
         self.changes = {}
         self.APIerror = self.API_ERROR_NONE
         self.unchanged = {}
@@ -245,7 +247,7 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
             oldexisted = os.path.exists(self.dbfile)
             if not self.MoveToBackup():
                 myprint('Could not move to backup')
-                return False            
+                return False
             if usedownloaded and os.path.exists(self.bz2file):
                 ok = True
             else:
@@ -279,7 +281,7 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
             myprint('got changes', len(self.changes))
         self.getAndUpdateTheContent()
         myprint('updated content')
-        
+
     def fillFilesFrombz2(self):
         try:
             myprint('reading bz2 and writing txts...')
@@ -399,16 +401,16 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                     #del self.changes[key]
                     #print('isdel 4', key)
                     #myprint('remaining changed pages:',len(self.changes),'  ')
-                
+
                 myprint('2. remaining changed pages after deletes:',len(self.changes),'  ')
                 with wiki.Wiki(url = self.siteurl) as mywiki:
-                    print('updating using self.changes')                    
-                    while True:        
+                    print('updating using self.changes')
+                    while True:
                         myprint('remaining changed pages in loop:',len(self.changes),'  ')
                         #starttiming = datetime.datetime.now()
                         if len(self.changes) == 0:
                             myprint(inspect.stack()[0][3],'No (more) titles in self.changes.')
-                            
+
                             #return True
                             break
                         if len(self.changes) == previouscounter:
@@ -463,9 +465,9 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                             #TODO: check if title can be zero
                             #deletedids = [x for x in req['pages'] if int(x) < 0]
                             deletedtitles = [requestpages[x]['title'] for x in requestpages if int(x) < 0]
-                            requestpages = {x:requestpages[x] for x in requestpages if int(x) > 0}                                                        
+                            requestpages = {x:requestpages[x] for x in requestpages if int(x) > 0}
                             #print('len(deletedtitles)', len(deletedtitles),deletedtitles)
-                            if len(deletedtitles):                                
+                            if len(deletedtitles):
                                 ok = localdb.deleteWithTransaction(deletedtitles)
                                 for pagetitle in deletedtitles:
                                     del self.changes[pagetitle]
@@ -508,7 +510,7 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                                                     #timestamp = oldlemmas[pagetitle]['new']['revisions'][0]['timestamp'],
                                                     #content = oldlemmas[pagetitle]['new']['revisions'][0]['*'],#rest are dummy values
                                                     #start = oldlemmas[pagetitle]['old']['lstart'],
-                                                    #charlen = oldlemmas[pagetitle]['old']['lcharlen']                                    
+                                                    #charlen = oldlemmas[pagetitle]['old']['lcharlen']
                                                     #)
                                 #print('newentry',newentry)
                                 #ok = localdb.updateExistingLemma(newentrywitholddata)
@@ -528,7 +530,7 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                                 for pageidtxt in newlemmas:
                                     del self.changes[newlemmas[pageidtxt]['title']]
                                     listoftitlestoget.remove(newlemmas[pageidtxt]['title'])
-                            #print('appending new         END', len(newlemmas)) 
+                            #print('appending new         END', len(newlemmas))
                             #for pageidtxt in newlemmas:
                                 #apage = newlemmas[pageidtxt]
                                 #newentry = db.DBRow(title = apage['title'],
@@ -537,14 +539,14 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
                                  #                   timestamp = apage['revisions'][0]['timestamp'],
                                  #                   content = apage['revisions'][0]['*'],#rest are dummy values
                                  #                   start = 0,
-                                 #                   charlen = 0                                    
+                                 #                   charlen = 0
                                  #                   )
                                 #print('newentry',newentry)
                                 #ok = localdb.appendLemma(newentry)
                                 #print('updated lemma:',apage['title'])
                                 #del self.changes[apage['title']]
                                 #listoftitlestoget.remove(apage['title'])
-                                
+
                             self.jsondump()
                         #stoptime2 = datetime.datetime.now()
                         #print( stoptime2 - stoptime1, stoptime1 - starttiming)
@@ -612,8 +614,8 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
         myprint('moving 2 files back from backup')
         try:
             backuppath = os.path.join(self.dumpspath, 'backup')
-            bdbfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.db') 
-            btxtfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.txt') 
+            bdbfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.db')
+            btxtfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.txt')
 
             dontcare = shutil.move(bdbfullname, dumpspath)
             dontcare = shutil.move(btxtfullname, dumpspath)
@@ -625,8 +627,8 @@ class Updater:#TODO: Update db siteinfo after each chunk of lemma updates
         myprint('deleting 2 files from backup.')
         try:
             backuppath = os.path.join(self.dumpspath, 'backup')
-            bdbfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.db') 
-            btxtfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.txt') 
+            bdbfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.db')
+            btxtfullname = os.path.join(backuppath, project+ LPMCFILESTRING + '.txt')
             removeif(bdbfullname)
             removeif(btxtfullname)
             return True
@@ -765,9 +767,9 @@ if __name__ == "__main__":
     #b.getAllChanges()
     #CreateLocalFilesFromNet(project,p)
     #InitiateLocalFiles(bz, b, t, deleteoldfiles = True)
-    u = Updater(project,dumpspath)
-    u.getLatestDumpAndTitles(forcedownload = True, usedownloaded = True)
-    #forcedownload = False, usedownloaded 
+    #u = Updater(project,dumpspath)
+    #u.getLatestDumpAndTitles(forcedownload = True, usedownloaded = True)
+    #forcedownload = False, usedownloaded
     #u.jsonread()
     #u.updatefromjson()
     #u.getChanges()
