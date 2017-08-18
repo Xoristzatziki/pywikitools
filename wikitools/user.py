@@ -311,3 +311,4 @@ class User:
 
     def __repr__(self):
         return "<"+self.__module__+'.'+self.__class__.__name__+" "+repr(self.name)+" on "+repr(self.site.apibase)+">"
+        

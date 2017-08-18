@@ -22,7 +22,7 @@ from . import api
 from . import internalfunctions
 import datetime
 import urllib.parse
-import re
+#import re
 from hashlib import md5
 import unicodedata
 
@@ -266,7 +266,7 @@ class Page(object):
         """Is content of the page same as this wikitext?"""
         if not self.title:
             self.setPageInfo()
-        latestwikitext = self.getWikiText()        
+        latestwikitext = self.getWikiText()
         return (latestwikitext == wikitext)
 
     def toggleTalk(self, check=True, followRedir=True):
@@ -471,7 +471,7 @@ class Page(object):
         rvprop='ids|flags|timestamp|user|userid|size|sha1|comment'
         if content:
             rvprop += '|content'
-        return internalfunctions.getList(self, 'prop', 'revisions', 'rv', direction, limit, lowlimit=content, 
+        return internalfunctions.getList(self, 'prop', 'revisions', 'rv', direction, limit, lowlimit=content,
         pageids=self.pageid, rvprop=rvprop, rvuser=rvuser)
 
 
@@ -494,7 +494,7 @@ class Page(object):
         rvprop='ids|flags|timestamp|user|userid|size|sha1|comment'
         if content:
             rvprop += '|content'
-        return internalfunctions.getListGen(self, 'prop', 'revisions', 'rv', direction, limit, 
+        return internalfunctions.getListGen(self, 'prop', 'revisions', 'rv', direction, limit,
         pageids=self.pageid, rvprop=rvprop, rvuser=rvuser)
 
     def getLogs(self, logtype=None, direction='older', limit='all', user=None):
@@ -502,7 +502,7 @@ class Page(object):
 
         direction - 2 options: 'older' (default) - start with most recent log entry and get older ones
             'newer' - start with the oldest entry and get newer ones
-        logtype - Only get specific logs: 'delete' for deletion log, 'protect' for protection log, etc. 
+        logtype - Only get specific logs: 'delete' for deletion log, 'protect' for protection log, etc.
             The function doesn't check this value as extensions can add their own log types. See the
             MW API's documentation for list=logevents for valid options on a given wiki
         limit - Only retrieve a certain number of entries. If 'all' (default), all revisions are returned

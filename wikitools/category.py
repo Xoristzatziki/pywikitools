@@ -116,3 +116,4 @@ class Category():
         if name != 'members':
             return super().__getattr__(name)
         return self.getAllMembers()
+

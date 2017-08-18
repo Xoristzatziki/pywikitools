@@ -21,9 +21,9 @@ from . import exceptions
 import re
 import time
 import sys
-import base64
+#import base64
 import warnings
-import copy
+#import copy
 import json
 import io
 from collections import deque
@@ -94,18 +94,8 @@ class APIRequest:
             if param in self.file:
                 del self.file[param]
 
-    def query(self, querycontinue=True):
-        """Actually do the query here and return usable stuff
-
-        querycontinue - look for query-continue in the results and continue querying
-        until there is no more data to retrieve (DEPRECATED: use queryGen as a more
-        reliable and efficient alternative)
-
-        """
-        if querycontinue and 'action' in self.data and self.data['action'] == 'query':
-            warnings.warn("""The querycontinue option is deprecated and will be removed
-in a future release, use the new queryGen function instead
-for queries requring multiple requests""", FutureWarning)
+    def query(self):
+        """Actually do the query here and return usable stuff"""
         data = False
         while not data:
             rawdata = self.__getRaw().text
@@ -116,8 +106,6 @@ for queries requring multiple requests""", FutureWarning)
             if self.iswrite and data['error']['code'] == 'blocked':
                 raise exceptions.UserBlocked(data['error']['info'])
             raise exceptions.APIQueryError(data['error']['code'], data['error']['info'])
-        if 'query-continue' in data and querycontinue:
-            data = self.__longQuery(data)
         if logging:
             resultlog.appendleft(data)
         return data
@@ -150,7 +138,7 @@ for queries requring multiple requests""", FutureWarning)
             raise exceptions.UnsupportedError("MediaWiki 1.21+ is required for this function")
         reqcopy = self.data.copy()
         self.changeParam('continue', '')
-        
+
         while True:
             data = False
             while not data:
@@ -173,66 +161,6 @@ for queries requring multiple requests""", FutureWarning)
                 self.data = reqcopy.copy()
                 for param in data['continue']:
                     self.changeParam(param, data['continue'][param])
-
-    def __longQuery(self, initialdata):
-        """For queries that require multiple requests
-        (DEPRECATED)
-        """
-        self._continues = set()
-        self._generator = ''
-        total = initialdata
-        res = initialdata
-        params = self.data
-        numkeys = len(list(res['query-continue'].keys()))
-        while numkeys > 0:
-            key1 = ''
-            key2 = ''
-            possiblecontinues = list(res['query-continue'].keys())
-            if len(possiblecontinues) == 1:
-                key1 = possiblecontinues[0]
-                keylist = list(res['query-continue'][key1].keys())
-                if len(keylist) == 1:
-                    key2 = keylist[0]
-                else:
-                    for key in keylist:
-                        if len(key) < 11:
-                            key2 = key
-                            break
-                    else:
-                        key2 = keylist[0]
-            else:
-                for posskey in possiblecontinues:
-                    keylist = list(res['query-continue'][posskey].keys())
-                    for key in keylist:
-                        if len(key) < 11:
-                            key1 = posskey
-                            key2 = key
-                            break
-                    if key1:
-                        break
-                else:
-                    key1 = possiblecontinues[0]
-                    key2 = list(res['query-continue'][key1].keys())[0]
-            if isinstance(res['query-continue'][key1][key2], int):
-                cont = res['query-continue'][key1][key2]
-            else:
-                cont = res['query-continue'][key1][key2]
-            if len(key2) >= 11 and key2.startswith('g'):
-                self._generator = key2
-                for ckey in self._continues:
-                    params.pop(ckey, None)
-            else:
-                self._continues.add(key2)
-            params[key2] = cont
-            req = APIRequest(self.site, params)
-            res = req.query(False)
-            for type in possiblecontinues:
-                total = resultCombine(type, total, res)
-            if 'query-continue' in res:
-                numkeys = len(list(res['query-continue'].keys()))
-            else:
-                numkeys = 0
-        return total
 
     def __getRaw(self):
         data = False
@@ -328,3 +256,4 @@ def resultCombine(type, old, new):
                     retset.update(newset)
                     ret['query']['pages'][key][type] = [dict(entry) for entry in retset]
     return ret
+
