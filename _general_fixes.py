@@ -87,9 +87,3 @@ def tryedit(wikiobj, pageobj, newtext, oldts, summary, username = None, password
         return True,''
     else:
         return False, PAGEPROBLEM
-
-
-
-
-
-
