@@ -2,10 +2,11 @@
 #Δημιουργήθηκε από τον Xoristzatziki στο el.wiktionary.org
 #2017
 
-import os, time, re , sys
-import importlib.util
+import time, re , sys
+#import importlib.util
 
-from _lib.wikitools import wiki, user, page, api, category
+#from _lib.wikitools import wiki, user, page, api, category
+from _lib.wikitools import wiki, page, api, category
 
 PAGECHANGEDFROMOLD = 'Η σελίδα έχει τροποποιηθεί.'
 CANTLOGIN = 'Δεν μπόρεσα να συνδεθώ.'
